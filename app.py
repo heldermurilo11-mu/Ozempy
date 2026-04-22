@@ -1,88 +1,109 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
-import os
+import streamlit as st
+from datetime import date
+from streamlit_gsheets import GSheetsConnection
 
-# Configuração da página
-st.set_page_config(page_title="Meu Diário Wegovy", page_icon="💉", layout="wide")
+st.set_page_config(page_title="Meu Diario Wegovy", page_icon="💉", layout="wide")
 
-# Nome do arquivo de dados
-DB_FILE = "dados_wegovy.csv"
+COLUMNS = [
+    "Data",
+    "Dose (mg)",
+    "Peso (kg)",
+    "Local Aplicacao",
+    "Efeitos Colaterais",
+    "Notas",
+]
+WORKSHEET_NAME = "Murilo"
 
-# Função para carregar ou criar o banco de dados
-def load_data():
-    if os.path.exists(DB_FILE):
-        df = pd.read_csv(DB_FILE)
-        df['Data'] = pd.to_datetime(df['Data'])
-        return df
-    else:
-        return pd.DataFrame(columns=["Data", "Dose (mg)", "Peso (kg)", "Local Aplicação", "Efeitos Colaterais", "Notas"])
+
+def get_connection() -> GSheetsConnection:
+    return st.connection("gsheets", type=GSheetsConnection)
+
+
+def load_data() -> pd.DataFrame:
+    conn = get_connection()
+    try:
+        df = conn.read(worksheet=WORKSHEET_NAME, ttl=0)
+    except Exception:
+        return pd.DataFrame(columns=COLUMNS)
+
+    if df is None or df.empty:
+        return pd.DataFrame(columns=COLUMNS)
+
+    for col in COLUMNS:
+        if col not in df.columns:
+            df[col] = pd.NA
+
+    df = df[COLUMNS].copy()
+    df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
+    df["Peso (kg)"] = pd.to_numeric(df["Peso (kg)"], errors="coerce")
+    df["Dose (mg)"] = pd.to_numeric(df["Dose (mg)"], errors="coerce")
+    return df
+
+
+def append_row(new_row: dict) -> None:
+    conn = get_connection()
+    current_df = load_data()
+    updated_df = pd.concat([current_df, pd.DataFrame([new_row])], ignore_index=True)
+    conn.update(worksheet=WORKSHEET_NAME, data=updated_df)
+
 
 df = load_data()
 
-# --- SIDEBAR (Entrada de Dados) ---
-st.sidebar.header("🆕 Novo Registro")
-with st.sidebar.form("diario_form", clear_on_submit=True):
-    data = st.date_input("Data", datetime.now())
+st.sidebar.header("Novo Registro")
+with st.sidebar.form("wegovy_form", clear_on_submit=True):
+    data = st.date_input("Data", value=date.today())
     dose = st.selectbox("Dose Wegovy (mg)", [0.25, 0.5, 1.0, 1.7, 2.4])
-    peso = st.number_input("Peso Atual (kg)", min_value=30.0, max_value=250.0, step=0.1)
-    local = st.selectbox("Local da Injeção", ["Abdômen Esquerdo", "Abdômen Direito", "Coxa Esquerda", "Coxa Direita", "Braço Esquerdo", "Braço Direito"])
-    sintomas = st.multiselect("Efeitos Colaterais", ["Nenhum", "Náusea", "Vômito", "Constipação", "Diarreia", "Cansaço", "Dor de Cabeça"])
-    notas = st.text_area("Notas Adicionais")
-    
-    submit = st.form_submit_button("Salvar Registro")
+    peso = st.number_input("Peso Atual (kg)", min_value=30.0, max_value=350.0, step=0.1)
+    local = st.selectbox("Local de Aplicacao", ["Coxa", "Abdomen", "Braco", "Outro"])
+    efeitos = st.multiselect(
+        "Efeitos Colaterais",
+        ["Nenhum", "Nausea", "Vomito", "Constipacao", "Diarreia", "Cansaco", "Dor de cabeca"],
+    )
+    notas = st.text_area("Notas")
+
+    submit = st.form_submit_button("Salvar")
 
 if submit:
-    new_data = pd.DataFrame({
-        "Data": [pd.to_datetime(data)],
-        "Dose (mg)": [dose],
-        "Peso (kg)": [peso],
-        "Local Aplicação": [local],
-        "Efeitos Colaterais": [", ".join(sintomas)],
-        "Notas": [notas]
-    })
-    df = pd.concat([df, new_data], ignore_index=True)
-    df.to_csv(DB_FILE, index=False)
-    st.sidebar.success("Dados salvos com sucesso!")
+    payload = {
+        "Data": pd.to_datetime(data),
+        "Dose (mg)": dose,
+        "Peso (kg)": peso,
+        "Local Aplicacao": local,
+        "Efeitos Colaterais": ", ".join(efeitos) if efeitos else "",
+        "Notas": notas,
+    }
+
+    with st.spinner("Salvando no Google Sheets..."):
+        append_row(payload)
+    st.sidebar.success("Registro salvo com sucesso.")
     st.rerun()
 
-# --- PAINEL PRINCIPAL ---
-st.title("💉 Monitor de Evolução: Wegovy")
+st.title("Monitor de Evolucao: Wegovy")
 
 if not df.empty:
-    # Métricas Rápidas
-    col1, col2, col3 = st.columns(3)
-    peso_inicial = df['Peso (kg)'].iloc[0]
-    peso_atual = df['Peso (kg)'].iloc[-1]
-    perda_total = peso_inicial - peso_atual
-    
-    col1.metric("Peso Atual", f"{peso_atual} kg")
-    col2.metric("Perda Total", f"{perda_total:.1f} kg", delta=f"{-perda_total:.1f} kg", delta_color="normal")
-    col3.metric("Última Dose", f"{df['Dose (mg)'].iloc[-1]} mg")
+    valid_df = df.dropna(subset=["Data", "Peso (kg)"]).sort_values("Data").copy()
 
-    # Gráfico de Evolução
-    st.subheader("Gráfico de Perda de Peso")
-    fig = px.line(df, x="Data", y="Peso (kg)", markers=True, title="Evolução do Peso")
-    fig.update_layout(yaxis_title="Peso (kg)", xaxis_title="Data")
-    st.plotly_chart(fig, use_container_width=True)
+    if not valid_df.empty:
+        peso_inicial = valid_df["Peso (kg)"].iloc[0]
+        peso_atual = valid_df["Peso (kg)"].iloc[-1]
+        perda_total = peso_inicial - peso_atual
+        ultima_dose = valid_df["Dose (mg)"].iloc[-1]
 
-    # Histórico em Tabela
-    st.subheader("Histórico de Aplicações")
-    st.dataframe(df.sort_values(by="Data", ascending=False), use_container_width=True)
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Peso Atual", f"{peso_atual:.1f} kg")
+        col2.metric("Perda Total", f"{perda_total:.1f} kg")
+        col3.metric("Ultima Dose", f"{ultima_dose:.2f} mg")
 
-    # Botão para limpar dados (opcional)
-    if st.checkbox("Mostrar opção para deletar histórico"):
-        if st.button("Limpar todos os dados"):
-            os.remove(DB_FILE)
-            st.rerun()
+        st.subheader("Evolucao do Peso")
+        fig = px.line(valid_df, x="Data", y="Peso (kg)", markers=True, title="Evolucao do peso")
+        fig.update_layout(xaxis_title="Data", yaxis_title="Peso (kg)")
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Historico Completo")
+    table_df = df.sort_values("Data", ascending=False).copy()
+    table_df["Data"] = table_df["Data"].dt.strftime("%Y-%m-%d")
+    st.dataframe(table_df, use_container_width=True)
 else:
-    st.info("Bem-vindo! Adicione seu primeiro registro na barra lateral para começar o acompanhamento.")
-
-# Dicas de uso
-with st.expander("ℹ️ Informações sobre o Wegovy"):
-    st.write("""
-    - **Escalonamento comum:** 0.25mg (4 semanas) -> 0.5mg (4 semanas) -> 1.0mg -> 1.7mg -> 2.4mg.
-    - **Rodízio:** É importante alternar os locais de aplicação para evitar reações na pele.
-    - **Hidratação:** Beba muita água para reduzir efeitos colaterais.
-    """)
+    st.info("Sem registros ainda. Adicione o primeiro registro na barra lateral.")

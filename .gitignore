@@ -1,0 +1,8 @@
+# Python
+__pycache__/
+*.pyc
+
+# Local secrets and service account keys
+*.json
+.streamlit/secrets.toml
+.toml
