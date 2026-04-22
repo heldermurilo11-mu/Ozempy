@@ -165,6 +165,23 @@ def build_body_map(last_doses: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def get_last_two_doses(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=["Data", "Local Aplicacao", "Ordem"])
+
+    doses = (
+        df.dropna(subset=["Data", "Local Aplicacao"])
+        .sort_values("Data", ascending=False)
+        .head(2)
+        .copy()
+    )
+    if doses.empty:
+        return pd.DataFrame(columns=["Data", "Local Aplicacao", "Ordem"])
+
+    doses["Ordem"] = ["Ultima dose", "Penultima dose"][: len(doses)]
+    return doses
+
+
 df = load_data()
 
 latest_row = get_latest_row_for_rotation(df)
@@ -211,6 +228,29 @@ if submit:
 
 st.title("Monitor de Evolucao: Wegovy")
 
+st.subheader("Rodizio de Aplicacao (ultimas 2 doses)")
+last_two_doses = get_last_two_doses(df)
+st.plotly_chart(build_body_map(last_two_doses), use_container_width=True)
+if last_two_doses.empty:
+    st.caption("Sem aplicacoes registradas ainda.")
+else:
+    latest_text = "-"
+    previous_text = "-"
+    latest_row = last_two_doses[last_two_doses["Ordem"] == "Ultima dose"]
+    if not latest_row.empty:
+        latest_item = latest_row.iloc[0]
+        latest_text = f"{latest_item['Local Aplicacao']} em {latest_item['Data'].strftime('%d/%m/%Y')}"
+
+    previous_row = last_two_doses[last_two_doses["Ordem"] == "Penultima dose"]
+    if not previous_row.empty:
+        previous_item = previous_row.iloc[0]
+        previous_text = f"{previous_item['Local Aplicacao']} em {previous_item['Data'].strftime('%d/%m/%Y')}"
+
+    info_col_1, info_col_2 = st.columns(2)
+    info_col_1.metric("Ultima aplicacao", latest_text)
+    info_col_2.metric("Penultima aplicacao", previous_text)
+    st.caption("Marcador 1 = ultima dose | Marcador 2 = penultima dose")
+
 if not df.empty:
     valid_df = df.dropna(subset=["Data", "Peso (kg)"]).sort_values("Data").copy()
 
@@ -229,18 +269,6 @@ if not df.empty:
         fig = px.line(valid_df, x="Data", y="Peso (kg)", markers=True, title="Evolucao do peso")
         fig.update_layout(xaxis_title="Data", yaxis_title="Peso (kg)")
         st.plotly_chart(fig, use_container_width=True)
-
-    last_two_doses = (
-        df.dropna(subset=["Data", "Local Aplicacao"]) 
-        .sort_values("Data", ascending=False)
-        .head(2)
-        .copy()
-    )
-    if not last_two_doses.empty:
-        last_two_doses["Ordem"] = ["Ultima dose", "Penultima dose"][: len(last_two_doses)]
-        st.subheader("Rodizio de Aplicacao (ultimas 2 doses)")
-        st.plotly_chart(build_body_map(last_two_doses), use_container_width=True)
-        st.caption("Marcador 1 = ultima dose | Marcador 2 = penultima dose")
 
     st.subheader("Historico Completo")
     table_df = df.sort_values("Data", ascending=False).copy()
