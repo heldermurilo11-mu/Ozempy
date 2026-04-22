@@ -1,8 +1,10 @@
 import pandas as pd
+import gspread
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from datetime import date
+from google.oauth2.service_account import Credentials
 from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Meu Diario Wegovy", page_icon="💉", layout="wide")
@@ -64,10 +66,30 @@ def load_data() -> pd.DataFrame:
 
 
 def append_row(new_row: dict) -> None:
-    conn = get_connection()
-    current_df = load_data()
-    updated_df = pd.concat([current_df, pd.DataFrame([new_row])], ignore_index=True)
-    conn.update(worksheet=WORKSHEET_NAME, data=updated_df)
+    sheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+    credentials_info = st.secrets["connections"]["gsheets"]["credentials"]
+
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials = Credentials.from_service_account_info(dict(credentials_info), scopes=scopes)
+    client = gspread.authorize(credentials)
+    worksheet = client.open_by_url(sheet_url).worksheet(WORKSHEET_NAME)
+
+    current_headers = worksheet.row_values(1)
+    if not current_headers:
+        worksheet.append_row(COLUMNS, value_input_option="USER_ENTERED")
+
+    row_values = [
+        pd.to_datetime(new_row["Data"]).strftime("%Y-%m-%d"),
+        new_row["Dose (mg)"],
+        new_row["Peso (kg)"],
+        new_row["Local Aplicacao"],
+        new_row["Efeitos Colaterais"],
+        new_row["Notas"],
+    ]
+    worksheet.append_row(row_values, value_input_option="USER_ENTERED")
 
 
 def get_latest_row_for_rotation(df: pd.DataFrame) -> pd.Series | None:
