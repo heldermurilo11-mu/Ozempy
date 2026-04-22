@@ -1,7 +1,7 @@
 import pandas as pd
 import gspread
 import plotly.express as px
-import plotly.graph_objects as go
+from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
 from datetime import date
 from google.oauth2.service_account import Credentials
@@ -37,6 +37,18 @@ LOCATION_POINTS = {
     "Coxa": (0.0, -0.72),
     "Braco": (0.0, 0.2),
 }
+LOCATION_IMAGE_POINTS = {
+    "Abdomen Esquerdo": (246, 315),
+    "Abdomen Direito": (292, 315),
+    "Abdomen": (270, 315),
+    "Coxa Esquerda": (223, 468),
+    "Coxa Direita": (317, 468),
+    "Coxa": (270, 468),
+    "Braco Esquerdo": (166, 255),
+    "Braco Direito": (372, 255),
+    "Braco": (270, 255),
+}
+BODY_IMAGE_PATH = "mapa corpo.webp"
 
 
 def get_gspread_worksheet() -> gspread.Worksheet:
@@ -110,68 +122,34 @@ def get_latest_row_for_rotation(df: pd.DataFrame) -> pd.Series | None:
     return latest.iloc[-1]
 
 
-def build_body_map(last_doses: pd.DataFrame) -> go.Figure:
-    fig = go.Figure()
+def build_body_map_image(last_doses: pd.DataFrame) -> Image.Image:
+    base_image = Image.open(BODY_IMAGE_PATH).convert("RGBA")
+    draw = ImageDraw.Draw(base_image)
+    font = ImageFont.load_default()
 
-    # Silhueta simples para referencia visual.
-    body_line = dict(color="#E2E8F0", width=2.5)
-    body_fill = "rgba(148, 163, 184, 0.16)"
-    head_fill = "rgba(148, 163, 184, 0.22)"
-    fig.add_shape(type="circle", x0=-0.18, x1=0.18, y0=0.92, y1=1.25, line=body_line, fillcolor=head_fill)
-    fig.add_shape(type="rect", x0=-0.35, x1=0.35, y0=-0.12, y1=0.92, line=body_line, fillcolor=body_fill)
-    fig.add_shape(type="rect", x0=-1.05, x1=-0.35, y0=0.12, y1=0.52, line=body_line, fillcolor=body_fill)
-    fig.add_shape(type="rect", x0=0.35, x1=1.05, y0=0.12, y1=0.52, line=body_line, fillcolor=body_fill)
-    fig.add_shape(type="rect", x0=-0.35, x1=-0.02, y0=-1.25, y1=-0.12, line=body_line, fillcolor=body_fill)
-    fig.add_shape(type="rect", x0=0.02, x1=0.35, y0=-1.25, y1=-0.12, line=body_line, fillcolor=body_fill)
-
-    labels = []
-    xs = []
-    ys = []
-    colors = []
-    sizes = []
+    marker_colors = {
+        "Ultima dose": (34, 197, 94, 255),
+        "Penultima dose": (245, 158, 11, 255),
+    }
 
     for _, row in last_doses.iterrows():
         local = str(row["Local Aplicacao"])
-        if local not in LOCATION_POINTS:
+        if local not in LOCATION_IMAGE_POINTS:
             continue
-        x, y = LOCATION_POINTS[local]
-        xs.append(x)
-        ys.append(y)
-        dose_label = row["Ordem"]
-        labels.append(f"{dose_label}: {local} ({row['Data'].strftime('%d/%m/%Y')})")
-        if dose_label == "Ultima dose":
-            colors.append("#22C55E")
-            sizes.append(20)
-        else:
-            colors.append("#F59E0B")
-            sizes.append(16)
 
-    if xs:
-        fig.add_trace(
-            go.Scatter(
-                x=xs,
-                y=ys,
-                mode="markers+text",
-                text=["2" if c == "#F59E0B" else "1" for c in colors],
-                textposition="middle center",
-                marker=dict(size=sizes, color=colors, line=dict(color="white", width=2)),
-                hovertext=labels,
-                hoverinfo="text",
-                showlegend=False,
-            )
-        )
+        x, y = LOCATION_IMAGE_POINTS[local]
+        label = "1" if row["Ordem"] == "Ultima dose" else "2"
+        fill_color = marker_colors.get(row["Ordem"], (59, 130, 246, 255))
 
-    fig.update_layout(
-        title="Mapa Corporal - Ultimas 2 Doses",
-        xaxis=dict(visible=False, range=[-1.25, 1.25]),
-        yaxis=dict(visible=False, range=[-1.35, 1.35], scaleanchor="x", scaleratio=1),
-        margin=dict(l=10, r=10, t=50, b=10),
-        paper_bgcolor="#0F172A",
-        plot_bgcolor="#111827",
-        font=dict(color="#E5E7EB"),
-        title_font=dict(color="#F8FAFC"),
-    )
-    return fig
+        radius = 18
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill_color, outline=(255, 255, 255, 255), width=3)
+
+        bbox = draw.textbbox((0, 0), label, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+        draw.text((x - text_w / 2, y - text_h / 2 - 1), label, fill=(255, 255, 255, 255), font=font)
+
+    return base_image
 
 
 def get_last_two_doses(df: pd.DataFrame) -> pd.DataFrame:
@@ -239,7 +217,7 @@ st.title("Monitor de Evolucao: Wegovy")
 
 st.subheader("Rodizio de Aplicacao (ultimas 2 doses)")
 last_two_doses = get_last_two_doses(df)
-st.plotly_chart(build_body_map(last_two_doses), use_container_width=True)
+st.image(build_body_map_image(last_two_doses), use_container_width=True)
 if last_two_doses.empty:
     st.caption("Sem aplicacoes registradas ainda.")
 else:
