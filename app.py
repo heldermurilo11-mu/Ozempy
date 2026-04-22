@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 import streamlit as st
 from datetime import date
 from google.oauth2.service_account import Credentials
-from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Meu Diario Wegovy", page_icon="💉", layout="wide")
 
@@ -40,19 +39,30 @@ LOCATION_POINTS = {
 }
 
 
-def get_connection() -> GSheetsConnection:
-    return st.connection("gsheets", type=GSheetsConnection)
+def get_gspread_worksheet() -> gspread.Worksheet:
+    sheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+    credentials_info = st.secrets["connections"]["gsheets"]["credentials"]
+
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials = Credentials.from_service_account_info(dict(credentials_info), scopes=scopes)
+    client = gspread.authorize(credentials)
+    return client.open_by_url(sheet_url).worksheet(WORKSHEET_NAME)
 
 
 def load_data() -> pd.DataFrame:
-    conn = get_connection()
     try:
-        df = conn.read(worksheet=WORKSHEET_NAME, ttl=0)
+        worksheet = get_gspread_worksheet()
+        records = worksheet.get_all_records()
     except Exception:
         return pd.DataFrame(columns=COLUMNS)
 
-    if df is None or df.empty:
+    if not records:
         return pd.DataFrame(columns=COLUMNS)
+
+    df = pd.DataFrame(records)
 
     for col in COLUMNS:
         if col not in df.columns:
@@ -66,16 +76,7 @@ def load_data() -> pd.DataFrame:
 
 
 def append_row(new_row: dict) -> None:
-    sheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
-    credentials_info = st.secrets["connections"]["gsheets"]["credentials"]
-
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    credentials = Credentials.from_service_account_info(dict(credentials_info), scopes=scopes)
-    client = gspread.authorize(credentials)
-    worksheet = client.open_by_url(sheet_url).worksheet(WORKSHEET_NAME)
+    worksheet = get_gspread_worksheet()
 
     current_headers = worksheet.row_values(1)
     if not current_headers:
