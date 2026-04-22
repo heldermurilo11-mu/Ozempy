@@ -55,23 +55,26 @@ def get_gspread_worksheet() -> gspread.Worksheet:
 def load_data() -> pd.DataFrame:
     try:
         worksheet = get_gspread_worksheet()
-        records = worksheet.get_all_records()
+        values = worksheet.get_all_values()
     except Exception:
         return pd.DataFrame(columns=COLUMNS)
 
-    if not records:
+    if len(values) <= 1:
         return pd.DataFrame(columns=COLUMNS)
 
-    df = pd.DataFrame(records)
+    headers = values[0]
+    rows = values[1:]
+    df = pd.DataFrame(rows, columns=headers)
 
     for col in COLUMNS:
         if col not in df.columns:
             df[col] = pd.NA
 
     df = df[COLUMNS].copy()
+    df["__sheet_row"] = range(2, 2 + len(df))
     df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
-    df["Peso (kg)"] = pd.to_numeric(df["Peso (kg)"], errors="coerce")
-    df["Dose (mg)"] = pd.to_numeric(df["Dose (mg)"], errors="coerce")
+    df["Peso (kg)"] = pd.to_numeric(df["Peso (kg)"].astype(str).str.replace(",", ".", regex=False), errors="coerce")
+    df["Dose (mg)"] = pd.to_numeric(df["Dose (mg)"].astype(str).str.replace(",", ".", regex=False), errors="coerce")
     return df
 
 
@@ -91,6 +94,11 @@ def append_row(new_row: dict) -> None:
         new_row["Notas"],
     ]
     worksheet.append_row(row_values, value_input_option="USER_ENTERED")
+
+
+def delete_row(sheet_row: int) -> None:
+    worksheet = get_gspread_worksheet()
+    worksheet.delete_rows(sheet_row)
 
 
 def get_latest_row_for_rotation(df: pd.DataFrame) -> pd.Series | None:
@@ -273,7 +281,35 @@ if not df.empty:
 
     st.subheader("Historico Completo")
     table_df = df.sort_values("Data", ascending=False).copy()
+    table_df = table_df.drop(columns=["__sheet_row"], errors="ignore")
     table_df["Data"] = table_df["Data"].dt.strftime("%Y-%m-%d")
     st.dataframe(table_df, use_container_width=True)
+
+    st.subheader("Excluir Registro")
+    delete_df = df.sort_values("Data", ascending=False).copy()
+    if not delete_df.empty:
+        delete_df = delete_df.reset_index(drop=True)
+        delete_df["_label"] = delete_df.apply(
+            lambda row: (
+                f"{row['Data'].strftime('%Y-%m-%d') if pd.notna(row['Data']) else 'Sem data'}"
+                f" | {row['Local Aplicacao']}"
+                f" | {f'{row['Peso (kg)']:.1f} kg' if pd.notna(row['Peso (kg)']) else 'peso n/d'}"
+                f" | {f'dose {row['Dose (mg)']:.2f} mg' if pd.notna(row['Dose (mg)']) else 'dose n/d'}"
+            ),
+            axis=1,
+        )
+
+        selected_label = st.selectbox(
+            "Selecione o registro para excluir",
+            options=delete_df["_label"].tolist(),
+        )
+        confirm_delete = st.checkbox("Confirmo que desejo excluir o registro selecionado")
+
+        if st.button("Excluir registro", type="secondary", disabled=not confirm_delete):
+            selected_row = delete_df[delete_df["_label"] == selected_label].iloc[0]
+            sheet_row = int(selected_row["__sheet_row"])
+            delete_row(sheet_row)
+            st.success("Registro excluido com sucesso.")
+            st.rerun()
 else:
     st.info("Sem registros ainda. Adicione o primeiro registro na barra lateral.")
