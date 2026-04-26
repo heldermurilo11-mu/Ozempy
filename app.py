@@ -268,7 +268,7 @@ else:
     st.toast("Primeira dose ainda não registrada.", icon="ℹ️")
 
 st.rerun()
-    st.rerun()
+
 
 st.title("Monitor de Evolucao: Wegovy")
 
