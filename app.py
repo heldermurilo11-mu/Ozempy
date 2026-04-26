@@ -1,6 +1,7 @@
 import pandas as pd
 import gspread
 import plotly.express as px
+import plotly.graph_objects as go
 from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
 from datetime import date
@@ -310,19 +311,34 @@ if not df.empty:
         col3.metric("Ultima Dose", f"{ultima_dose:.2f} mg")
 
         st.subheader("Evolucao do Peso")
-        # DataFrame com flag indicando se há dose naquele dia
         df_plot = valid_df.copy()
         df_plot["TemDose"] = df_plot["Dose (mg)"].notna()
-        fig = px.line(
-            df_plot,
-            x="Data",
-            y="Peso (kg)",
-            markers=True,
-            title="Evolução do peso",
-            color="TemDose",
-            color_discrete_map={True: "#9b59b6", False: "#3498db"},
+        
+        # Criando o gráfico com Graph Objects para permitir cores diferentes nos marcadores de uma mesma linha
+        fig = go.Figure()
+        
+        # Adiciona a linha contínua e os marcadores
+        fig.add_trace(go.Scatter(
+            x=df_plot["Data"],
+            y=df_plot["Peso (kg)"],
+            mode='lines+markers',
+            name='Peso',
+            line=dict(color='#3498db', width=2), # Linha azul clara
+            marker=dict(
+                color=df_plot["TemDose"].map({True: "#9b59b6", False: "#2ecc71"}),
+                size=10,
+                line=dict(width=1, color='white')
+            ),
+            hovertemplate="Data: %{x}<br>Peso: %{y} kg<extra></extra>"
+        ))
+        
+        fig.update_layout(
+            title="Evolução do peso (Roxo: c/ Med | Verde: s/ Med)",
+            xaxis_title="Data",
+            yaxis_title="Peso (kg)",
+            template="plotly_dark" if theme == "Escuro" else "plotly_white",
+            hovermode="x unified"
         )
-        fig.update_layout(xaxis_title="Data", yaxis_title="Peso (kg)")
         st.plotly_chart(fig, use_container_width=True)
 
     # Exportar dados como CSV
