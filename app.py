@@ -224,9 +224,14 @@ if latest_row is not None:
 st.sidebar.header("Novo Registro")
 with st.sidebar.form("wegovy_form", clear_on_submit=True):
     data = st.date_input("Data", value=date.today())
-    dose = st.selectbox("Dose Wegovy (mg)", [0.25, 0.5, 1.0, 1.7, 2.4])
+    registrar_dose = st.checkbox("Registrar dose de medicamento", value=True)
+    if registrar_dose:
+        dose = st.selectbox("Dose Wegovy (mg)", [0.25, 0.5, 1.0, 1.7, 2.4])
+        local = st.selectbox("Local da Injecao", LOCATION_OPTIONS)
+    else:
+        dose = None
+        local = None
     peso = st.number_input("Peso Atual (kg)", min_value=30.0, max_value=350.0, step=0.1)
-    local = st.selectbox("Local da Injecao", LOCATION_OPTIONS)
     efeitos = st.multiselect(
         "Efeitos Colaterais",
         ["Nenhum", "Nausea", "Vomito", "Constipacao", "Diarreia", "Cansaco", "Dor de cabeca"],
@@ -239,12 +244,14 @@ with st.sidebar.form("wegovy_form", clear_on_submit=True):
 if submit:
     payload = {
         "Data": pd.to_datetime(data),
-        "Dose (mg)": dose,
         "Peso (kg)": peso,
-        "Local Aplicacao": local,
-        "Efeitos Colaterais": ", ".join(efeitos) if efeitos else "",
         "Notas": notas,
+        "Efeitos Colaterais": ", ".join(efeitos) if efeitos else "",
     }
+    # Incluir dose e local apenas se houver registro de dose
+    if registrar_dose:
+        payload["Dose (mg)"] = dose
+        payload["Local Aplicacao"] = local
 
     with st.spinner("Salvando no Google Sheets..."):
         append_row(payload)
@@ -303,7 +310,18 @@ if not df.empty:
         col3.metric("Ultima Dose", f"{ultima_dose:.2f} mg")
 
         st.subheader("Evolucao do Peso")
-        fig = px.line(valid_df, x="Data", y="Peso (kg)", markers=True, title="Evolucao do peso")
+        # DataFrame com flag indicando se há dose naquele dia
+        df_plot = valid_df.copy()
+        df_plot["TemDose"] = df_plot["Dose (mg)"].notna()
+        fig = px.line(
+            df_plot,
+            x="Data",
+            y="Peso (kg)",
+            markers=True,
+            title="Evolução do peso",
+            color="TemDose",
+            color_discrete_map={True: "#9b59b6", False: "#3498db"},
+        )
         fig.update_layout(xaxis_title="Data", yaxis_title="Peso (kg)")
         st.plotly_chart(fig, use_container_width=True)
 
