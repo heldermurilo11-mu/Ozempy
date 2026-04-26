@@ -325,9 +325,9 @@ if not df.empty:
         fig.update_layout(xaxis_title="Data", yaxis_title="Peso (kg)")
         st.plotly_chart(fig, use_container_width=True)
 
-# Exportar dados como CSV
-csv = valid_df.to_csv(index=False).encode('utf-8')
-st.download_button(label="📥 Exportar CSV", data=csv, file_name='semaglutide_data.csv', mime='text/csv')
+    # Exportar dados como CSV
+    csv = valid_df.to_csv(index=False).encode('utf-8')
+    st.download_button(label="📥 Exportar CSV", data=csv, file_name='semaglutide_data.csv', mime='text/csv')
 
     st.subheader("Historico Completo")
     table_df = df.sort_values("Data", ascending=False).copy()
