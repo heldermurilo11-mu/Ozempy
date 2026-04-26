@@ -267,7 +267,7 @@ if latest_row is not None:
 else:
     st.toast("Primeira dose ainda não registrada.", icon="ℹ️")
 
-st.rerun()
+# st.rerun() removed to avoid indentation error
 
 
 st.title("Monitor de Evolucao: Wegovy")
