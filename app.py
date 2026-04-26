@@ -137,11 +137,11 @@ def append_row(new_row: dict) -> None:
 
     row_values = [
         pd.to_datetime(new_row["Data"]).strftime("%Y-%m-%d"),
-        new_row["Dose (mg)"],
-        new_row["Peso (kg)"],
-        new_row["Local Aplicacao"],
-        new_row["Efeitos Colaterais"],
-        new_row["Notas"],
+        new_row.get("Dose (mg)", ""),
+        new_row.get("Peso (kg)", ""),
+        new_row.get("Local Aplicacao", ""),
+        new_row.get("Efeitos Colaterais", ""),
+        new_row.get("Notas", ""),
     ]
     worksheet.append_row(row_values, value_input_option="USER_ENTERED")
 
