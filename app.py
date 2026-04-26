@@ -8,6 +8,44 @@ from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Meu Diario Wegovy", page_icon="💉", layout="wide")
 
+# --- Tema (Light/Dark) com Glassmorphism ---
+theme = st.sidebar.radio("Tema", ["Claro", "Escuro"], index=1)
+if theme == "Escuro":
+    st.markdown(
+        """
+        <style>
+        body { background-color: #0e1117; color: #e0e0e0; }
+        .glass {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 1rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        """
+        <style>
+        body { background-color: #f5f5f5; color: #212121; }
+        .glass {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            border: 1px solid rgba(0,0,0,0.1);
+            padding: 1rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 COLUMNS = [
     "Data",
     "Dose (mg)",
@@ -211,6 +249,18 @@ if submit:
     with st.spinner("Salvando no Google Sheets..."):
         append_row(payload)
     st.sidebar.success("Registro salvo com sucesso.")
+# Calcular próximo lembrete (14 dias após a última dose)
+if latest_row is not None:
+    next_dose_date = latest_row["Data"] + pd.Timedelta(days=14)
+    days_left = (next_dose_date - pd.to_datetime(date.today())).days
+    if days_left > 0:
+        st.toast(f"Próxima dose em {next_dose_date.strftime('%d/%m/%Y')} ({days_left} dias).", icon="⏰")
+    else:
+        st.toast("É hora da próxima dose!", icon="⚠️")
+else:
+    st.toast("Primeira dose ainda não registrada.", icon="ℹ️")
+
+st.rerun()
     st.rerun()
 
 st.title("Monitor de Evolucao: Wegovy")
@@ -256,6 +306,10 @@ if not df.empty:
         fig = px.line(valid_df, x="Data", y="Peso (kg)", markers=True, title="Evolucao do peso")
         fig.update_layout(xaxis_title="Data", yaxis_title="Peso (kg)")
         st.plotly_chart(fig, use_container_width=True)
+
+# Exportar dados como CSV
+csv = valid_df.to_csv(index=False).encode('utf-8')
+st.download_button(label="📥 Exportar CSV", data=csv, file_name='semaglutide_data.csv', mime='text/csv')
 
     st.subheader("Historico Completo")
     table_df = df.sort_values("Data", ascending=False).copy()
